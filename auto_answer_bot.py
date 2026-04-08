@@ -451,27 +451,28 @@ class AutoAnswerBot:
 
 
 def main():
-    """主函数"""
     import argparse
-    
-    parser = argparse.ArgumentParser(description='基于图像识别的自动答题脚本')
-    parser.add_argument('--ocr', choices=['paddleocr', 'tesseract', 'easyocr'], 
-                       default='paddleocr', help='OCR引擎')
+    parser = argparse.ArgumentParser(description='基于图像识别的自动答题脚本（增强版）')
+    parser.add_argument('--ocr', choices=['paddleocr', 'tesseract', 'easyocr'], default='paddleocr', help='OCR 引擎')
     parser.add_argument('--db', default='answer_database.txt', help='答案数据库路径')
     parser.add_argument('--image', help='图像文件路径')
     parser.add_argument('--interactive', action='store_true', help='交互模式')
-    
+    parser.add_argument('--continuous', action='store_true', help='连续答题模式')
+    parser.add_argument('--interval', type=float, default=2.0, help='连续答题间隔（秒）')
+    parser.add_argument('--region', nargs=4, type=int, metavar=('LEFT', 'TOP', 'WIDTH', 'HEIGHT'), help='截图区域')
+    parser.add_argument('--answer', '-a', help='指定答案选项（A/B/C/D）')
     args = parser.parse_args()
-    
     bot = AutoAnswerBot(ocr_engine=args.ocr, answer_db=args.db)
-    
     if args.interactive:
         bot.interactive_mode()
+    elif args.continuous:
+        region = tuple(args.region) if args.region else None
+        bot.continuous_mode(interval=args.interval, region=region)
     elif args.image:
         bot.answer_from_image(args.image)
     else:
-        # 默认交互模式
-        bot.interactive_mode()
+        region = tuple(args.region) if args.region else None
+        bot.answer_from_screen(region=region, auto_click=True, answer_label=args.answer)
 
 
 if __name__ == "__main__":

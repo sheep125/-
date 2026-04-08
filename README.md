@@ -1,121 +1,137 @@
-# 基于图像识别的自动答题脚本
+# 基于图像识别的自动答题脚本（增强版）
 
-这是一个支持屏幕截图、OCR 文字识别、题目解析和答案匹配的自动答题工具。
+## 功能特点
+- ✅ 屏幕截图捕获（支持全屏和指定区域）
+- ✅ OCR 文字识别（支持 PaddleOCR/Tesseract/EasyOCR 三种引擎）
+- ✅ 题目类型自动识别（单选/多选/判断/填空）
+- ✅ 答案精确匹配和关键词模糊匹配
+- ✅ **自动点击答案**（基于选项位置识别）
+- ✅ 连续答题模式
+- ✅ 交互式命令行界面
 
-## 功能特性
+## 新增核心功能
 
-- 📸 **屏幕截图**: 支持全屏或指定区域截图
-- 🔍 **OCR 识别**: 支持多种 OCR 引擎 (PaddleOCR, Tesseract, EasyOCR)
-- 📝 **题目解析**: 自动识别题目类型（单选、多选、判断、填空）
-- 💾 **答案匹配**: 支持精确匹配和关键词模糊匹配
-- 🎮 **交互模式**: 命令行交互式操作
+### 1. 自动点击答案
+脚本现在可以自动识别选项的位置坐标，并在找到答案后自动点击对应选项：
+- 通过 OCR 识别结果获取每个选项的边界框坐标
+- 计算选项中心点作为点击位置
+- 支持根据答案文本或指定字母（A/B/C/D）进行点击
+
+### 2. 连续答题模式
+支持循环执行答题任务，适用于多题目连续场景：
+```bash
+python auto_answer_bot.py --continuous --interval 3
+```
+
+### 3. 指定区域截图
+可以只截取屏幕特定区域进行识别，提高准确率和速度：
+```bash
+python auto_answer_bot.py --region 100 100 800 600
+```
+
+### 4. 手动指定答案
+如果自动匹配失败，可以手动指定答案选项：
+```bash
+python auto_answer_bot.py --answer B
+```
 
 ## 安装依赖
-
 ```bash
 # 基础依赖
-pip install Pillow
+pip install Pillow pyautogui
 
-# 推荐使用 PaddleOCR（中文识别效果好）
-pip install paddlepaddle paddleocr
-
-# 或使用 Tesseract
-pip install pytesseract
-# 需要系统安装 tesseract-ocr
-
-# 或使用 EasyOCR
-pip install easyocr
+# OCR 引擎（三选一或全部安装）
+pip install paddlepaddle paddleocr  # 推荐：PaddleOCR（中文识别效果好）
+# 或
+pip install pytesseract tesseract  # Tesseract OCR
+# 或
+pip install easyocr  # EasyOCR
 ```
 
 ## 使用方法
 
-### 1. 交互模式（推荐）
+### 快速开始（自动答题并点击）
+```bash
+# 直接运行，自动截图、识别、匹配答案并点击
+python auto_answer_bot.py
 
+# 指定 OCR 引擎
+python auto_answer_bot.py --ocr paddleocr
+
+# 指定截图区域 (left, top, width, height)
+python auto_answer_bot.py --region 100 100 800 600
+
+# 手动指定答案选项
+python auto_answer_bot.py --answer B
+```
+
+### 交互模式
 ```bash
 python auto_answer_bot.py --interactive
 ```
 
-支持的命令：
-- `screen` - 截取当前屏幕并答题
-- `image <路径>` - 从图片文件答题
+可用命令：
+- `screen` - 截取全屏并自动答题点击
+- `screen <left> <top> <width> <height>` - 指定区域截图答题
+- `click A/B/C/D` - 手动指定答案选项并点击
+- `image <path>` - 从图片文件答题
 - `add <题目> <答案>` - 添加答案到数据库
-- `quit` - 退出程序
+- `continuous [间隔秒数]` - 连续答题模式
+- `quit` - 退出
 
-### 2. 直接处理图片
+### 连续答题模式
+```bash
+# 每 2 秒自动答一题（默认间隔）
+python auto_answer_bot.py --continuous
 
+# 每 3 秒自动答一题，限定截图区域
+python auto_answer_bot.py --continuous --interval 3 --region 100 100 800 600
+```
+
+### 从图片答题
 ```bash
 python auto_answer_bot.py --image screenshot.png
 ```
 
-### 3. 指定 OCR 引擎
-
-```bash
-# 使用 PaddleOCR
-python auto_answer_bot.py --ocr paddleocr --interactive
-
-# 使用 Tesseract
-python auto_answer_bot.py --ocr tesseract --interactive
-
-# 使用 EasyOCR
-python auto_answer_bot.py --ocr easyocr --interactive
-```
-
-### 4. 指定答案数据库
-
-```bash
-python auto_answer_bot.py --db my_answers.txt --interactive
-```
-
 ## 答案数据库格式
 
-答案数据库是简单的文本文件，每行格式为：
+在 `answer_database.txt` 中按以下格式添加答案：
 
 ```
 题目内容：答案
+另一道题目：B
+判断题内容：正确
 ```
 
-示例 (`answer_database.txt`):
+支持模糊匹配，系统会自动提取关键词进行匹配。
+
+## 安全提示
+
+⚠️ **故障保护机制**：脚本启用了 pyautogui 的故障保护功能，将鼠标移动到屏幕左上角可以紧急停止脚本。
+
+⚠️ **使用建议**：
+- 首次使用建议先在测试环境验证
+- 确保截图区域准确包含题目和选项
+- 答案数据库越完善，准确率越高
+
+## 技术架构
 
 ```
-中国的首都是哪里？: 北京
-Python 是一种什么语言？: 编程语言
-1+1 等于多少？: 2
+AutoAnswerBot
+├── ImageCapture      # 屏幕截图模块
+├── OCRRecognizer     # OCR 文字识别（支持多种引擎）
+├── QuestionParser    # 题目解析（提取题干、选项及位置）
+├── AnswerMatcher     # 答案匹配（精确 + 模糊）
+└── AutoClicker       # 自动点击模块（新增）
 ```
 
-## 代码结构
+## 常见问题
 
-```
-auto_answer_bot.py
-├── ImageCapture      # 图像捕获模块
-├── OCRRecognizer     # OCR 识别模块
-├── QuestionParser    # 题目解析模块
-├── AnswerMatcher     # 答案匹配模块
-└── AutoAnswerBot     # 主控制类
-```
+**Q: 点击位置不准确？**
+A: 确保截图区域与题目显示区域一致，检查 OCR 识别的选项位置是否正确。
 
-## 扩展功能
+**Q: 无法识别中文？**
+A: 推荐使用 PaddleOCR，对中文支持最好。
 
-### 添加自动点击功能
-
-在 `_click_answer` 方法中集成 pyautogui：
-
-```bash
-pip install pyautogui
-```
-
-然后修改代码实现自动点击逻辑。
-
-### 自定义题目解析规则
-
-继承 `QuestionParser` 类并重写相关方法以适应特定格式的题目。
-
-## 注意事项
-
-1. 首次使用 PaddleOCR 会自动下载模型文件
-2. 确保截图区域清晰，文字可辨识
-3. 答案数据库需要手动积累和维护
-4. 请合理使用，遵守相关平台规则
-
-## License
-
-MIT License
+**Q: 如何添加新题目答案？**
+A: 使用交互模式的 `add` 命令，或直接编辑 `answer_database.txt` 文件。
