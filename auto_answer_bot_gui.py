@@ -19,6 +19,132 @@ from tkinter import ttk, scrolledtext, messagebox, filedialog
 from PIL import Image, ImageTk
 
 
+class RegionSelector:
+    """屏幕区域选择器 - 支持鼠标拖拽选区"""
+    
+    def __init__(self, callback=None):
+        self.callback = callback
+        self.start_x = None
+        self.start_y = None
+        self.current_x = None
+        self.current_y = None
+        self.rect_id = None
+        self.selection = None
+        
+    def start_selection(self):
+        """启动区域选择"""
+        # 创建全屏透明窗口
+        self.top = tk.Toplevel()
+        self.top.attributes('-fullscreen', True)
+        self.top.attributes('-alpha', 0.3)  # 半透明
+        self.top.attributes('-topmost', True)
+        self.top.configure(bg='black')
+        
+        # 获取屏幕尺寸
+        screen_width = self.top.winfo_screenwidth()
+        screen_height = self.top.winfo_screenheight()
+        
+        # 创建画布用于绘制选区
+        self.canvas = tk.Canvas(self.top, bg='black', highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+        
+        # 绑定事件
+        self.canvas.bind('<Button-1>', self.on_press)
+        self.canvas.bind('<B1-Motion>', self.on_drag)
+        self.canvas.bind('<ButtonRelease-1>', self.on_release)
+        
+        # 按 ESC 取消
+        self.top.bind('<Escape>', lambda e: self.cancel_selection())
+        
+        # 显示提示
+        self.canvas.create_text(
+            screen_width // 2, 50,
+            text="按住鼠标左键拖动选择区域，松开完成选择 | 按 ESC 取消",
+            fill='white', font=('Arial', 16, 'bold')
+        )
+        
+    def on_press(self, event):
+        """鼠标按下"""
+        self.start_x = event.x
+        self.start_y = event.y
+        self.current_x = event.x
+        self.current_y = event.y
+        
+    def on_drag(self, event):
+        """鼠标拖动"""
+        self.current_x = event.x
+        self.current_y = event.y
+        
+        # 清除之前的矩形
+        if self.rect_id:
+            self.canvas.delete(self.rect_id)
+        
+        # 计算矩形坐标
+        x1 = min(self.start_x, self.current_x)
+        y1 = min(self.start_y, self.current_y)
+        x2 = max(self.start_x, self.current_x)
+        y2 = max(self.start_y, self.current_y)
+        
+        # 绘制绿色边框
+        self.rect_id = self.canvas.create_rectangle(
+            x1, y1, x2, y2,
+            outline='#00ff00', width=3
+        )
+        
+        # 显示坐标和尺寸
+        width = x2 - x1
+        height = y2 - y1
+        info_text = f"坐标：({x1}, {y1})  尺寸：{width} x {height}"
+        
+        # 更新或创建信息文本
+        if hasattr(self, 'info_text_id'):
+            self.canvas.delete(self.info_text_id)
+        self.info_text_id = self.canvas.create_text(
+            x1 + 10, y1 - 20,
+            text=info_text,
+            fill='#00ff00', font=('Arial', 12, 'bold'),
+            anchor='sw'
+        )
+        
+    def on_release(self, event):
+        """鼠标释放"""
+        self.current_x = event.x
+        self.current_y = event.y
+        
+        # 计算最终选区
+        x1 = min(self.start_x, self.current_x)
+        y1 = min(self.start_y, self.current_y)
+        x2 = max(self.start_x, self.current_x)
+        y2 = max(self.start_y, self.current_y)
+        
+        # 确保选区有效
+        if x2 - x1 > 10 and y2 - y1 > 10:
+            self.selection = (x1, y1, x2 - x1, y2 - y1)
+            self.close_and_callback()
+        else:
+            # 选区太小，忽略
+            if self.rect_id:
+                self.canvas.delete(self.rect_id)
+            
+    def cancel_selection(self):
+        """取消选择"""
+        self.selection = None
+        try:
+            self.top.destroy()
+        except:
+            pass
+            
+    def close_and_callback(self):
+        """关闭窗口并回调"""
+        try:
+            self.top.destroy()
+        except:
+            pass
+        
+        if self.callback and self.selection:
+            self.callback(self.selection)
+
+
 class QuestionType(Enum):
     """题目类型枚举"""
     SINGLE_CHOICE = "single_choice"
@@ -441,6 +567,10 @@ class AnswerBotGUI:
         ttk.Checkbutton(row1, text="使用自定义区域", variable=self.region_var,
                        command=self._toggle_region_input).pack(side=tk.LEFT)
         
+        # 框选按钮
+        ttk.Button(row1, text="🖱️ 点击框选屏幕区域", command=self._open_region_selector,
+                  style="Accent.TButton").pack(side=tk.LEFT, padx=10)
+        
         self.region_inputs = []
         for label, var_name in [("X:", "x"), ("Y:", "y"), ("宽:", "w"), ("高:", "h")]:
             ttk.Label(row1, text=label).pack(side=tk.LEFT, padx=(10, 2))
@@ -562,6 +692,49 @@ class AnswerBotGUI:
         state = tk.NORMAL if self.region_var.get() else tk.DISABLED
         for _, var, entry in self.region_inputs:
             entry.config(state=state)
+    
+    def _open_region_selector(self):
+        """打开区域选择器"""
+        # 最小化主窗口
+        self.root.iconify()
+        time.sleep(0.2)  # 等待窗口最小化
+        
+        def on_region_selected(region):
+            """处理选中的区域"""
+            # 恢复主窗口
+            self.root.after(100, lambda: self.root.deiconify())
+            
+            # 填充区域值
+            x, y, w, h = region
+            self.region_var.set(True)
+            self._toggle_region_input()
+            
+            # 更新输入框
+            for i, (name, var, entry) in enumerate(self.region_inputs):
+                if name == 'x':
+                    var.set(str(x))
+                elif name == 'y':
+                    var.set(str(y))
+                elif name == 'w':
+                    var.set(str(w))
+                elif name == 'h':
+                    var.set(str(h))
+            
+            self.log_message(f"✓ 已选择区域：({x}, {y}) {w}x{h}", 'success')
+            
+            # 截取预览图
+            try:
+                preview_path = "region_preview.png"
+                from PIL import ImageGrab
+                screenshot = ImageGrab.grab(bbox=(x, y, x+w, y+h))
+                screenshot.save(preview_path)
+                self.log_message(f"✓ 区域预览已保存：{preview_path}", 'info')
+            except Exception as e:
+                self.log_message(f"预览保存失败：{e}", 'warning')
+        
+        # 启动区域选择器
+        selector = RegionSelector(callback=on_region_selected)
+        selector.start_selection()
     
     def _toggle_continuous(self):
         """切换连续模式"""
