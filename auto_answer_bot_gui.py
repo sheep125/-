@@ -640,9 +640,22 @@ class AnswerBotGUI:
                                 font=('Arial', 14, 'bold'), foreground=self.colors['primary'])
         answer_label.pack(anchor=tk.W, pady=10)
         
+        # 综合结果标签页（新增）
+        result_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(result_frame, text="📋 识别结果")
+        
+        self.result_text = scrolledtext.ScrolledText(result_frame, wrap=tk.WORD, state=tk.DISABLED, height=15)
+        self.result_text.pack(fill=tk.BOTH, expand=True)
+        
+        # 配置结果文本颜色
+        self.result_text.tag_config('info', foreground='#2196F3')
+        self.result_text.tag_config('success', foreground='#4CAF50')
+        self.result_text.tag_config('warning', foreground='#ff9800')
+        self.result_text.tag_config('error', foreground='#f44336')
+        
         # 日志标签页
         log_frame = ttk.Frame(notebook)
-        notebook.add(log_frame, text="📋 运行日志")
+        notebook.add(log_frame, text="📜 运行日志")
         
         self.log_text = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, state=tk.DISABLED)
         self.log_text.pack(fill=tk.BOTH, expand=True)
