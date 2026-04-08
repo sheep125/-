@@ -640,9 +640,22 @@ class AnswerBotGUI:
                                 font=('Arial', 14, 'bold'), foreground=self.colors['primary'])
         answer_label.pack(anchor=tk.W, pady=10)
         
+        # 综合结果标签页（新增）
+        result_frame = ttk.Frame(notebook, padding="10")
+        notebook.add(result_frame, text="📋 识别结果")
+        
+        self.result_text = scrolledtext.ScrolledText(result_frame, wrap=tk.WORD, state=tk.DISABLED, height=15)
+        self.result_text.pack(fill=tk.BOTH, expand=True)
+        
+        # 配置结果文本颜色
+        self.result_text.tag_config('info', foreground='#2196F3')
+        self.result_text.tag_config('success', foreground='#4CAF50')
+        self.result_text.tag_config('warning', foreground='#ff9800')
+        self.result_text.tag_config('error', foreground='#f44336')
+        
         # 日志标签页
         log_frame = ttk.Frame(notebook)
-        notebook.add(log_frame, text="📋 运行日志")
+        notebook.add(log_frame, text="📜 运行日志")
         
         self.log_text = scrolledtext.ScrolledText(log_frame, wrap=tk.WORD, state=tk.DISABLED)
         self.log_text.pack(fill=tk.BOTH, expand=True)
@@ -694,13 +707,13 @@ class AnswerBotGUI:
             entry.config(state=state)
     
     def _open_region_selector(self):
-        """打开区域选择器"""
+        """打开区域选择器并自动识别题目"""
         # 最小化主窗口
         self.root.iconify()
         time.sleep(0.2)  # 等待窗口最小化
         
         def on_region_selected(region):
-            """处理选中的区域"""
+            """处理选中的区域并自动识别题目"""
             # 恢复主窗口
             self.root.after(100, lambda: self.root.deiconify())
             
@@ -722,19 +735,118 @@ class AnswerBotGUI:
             
             self.log_message(f"✓ 已选择区域：({x}, {y}) {w}x{h}", 'success')
             
-            # 截取预览图
+            # 截取预览图并进行 OCR 识别
             try:
                 preview_path = "region_preview.png"
                 from PIL import ImageGrab
                 screenshot = ImageGrab.grab(bbox=(x, y, x+w, y+h))
                 screenshot.save(preview_path)
                 self.log_message(f"✓ 区域预览已保存：{preview_path}", 'info')
+                
+                # 自动进行题目识别
+                self.log_message("🔍 正在识别题目...", 'info')
+                self._recognize_question_from_region((x, y, x+w, y+h))
+                
             except Exception as e:
                 self.log_message(f"预览保存失败：{e}", 'warning')
         
         # 启动区域选择器
         selector = RegionSelector(callback=on_region_selected)
         selector.start_selection()
+    
+    def _recognize_question_from_region(self, region_bbox):
+        """从指定区域识别题目并显示结果"""
+        def recognize_thread():
+            try:
+                if not self.bot:
+                    self.log_message("❌ 请先点击【初始化】按钮", 'error')
+                    return
+                
+                # 保存截图
+                screenshot_path = "current_question.png"
+                from PIL import ImageGrab
+                screenshot = ImageGrab.grab(bbox=region_bbox)
+                screenshot.save(screenshot_path)
+                
+                # 进行 OCR 识别
+                ocr_results = self.bot.ocr_recognizer.recognize(screenshot_path)
+                
+                # 解析题目
+                question = self.bot.question_parser.parse(ocr_results)
+                
+                # 在主线程中更新 UI
+                def update_ui():
+                    # 清除之前的结果
+                    self.result_text.config(state=tk.NORMAL)
+                    self.result_text.delete('1.0', tk.END)
+                    
+                    # 显示识别结果
+                    result = "=== 识别到的题目 ===\n\n"
+                    result += f"题目内容：{question.question_text}\n\n"
+                    
+                    if question.options:
+                        result += "选项:\n"
+                        for i, opt in enumerate(question.options):
+                            label = chr(65 + i)
+                            result += f"  {label}. {opt}\n"
+                    
+                    result += f"\n题目类型：{question.question_type.value}\n"
+                    
+                    # 查找答案
+                    answer = self.bot.answer_matcher.find_answer(question)
+                    if answer:
+                        result += f"\n✅ 匹配到答案：{answer}\n"
+                        
+                        # 如果是选择题且需要自动点击
+                        if self.auto_click_var.get() and question.options:
+                            try:
+                                # 计算选项的绝对屏幕坐标
+                                option_positions = {}
+                                for item in ocr_results:
+                                    text = item.get('text', '').strip()
+                                    box = item.get('box')
+                                    if box and len(text) >= 2:
+                                        import re
+                                        match = re.match(r'^([A-D])[.、]', text)
+                                        if match:
+                                            lbl = match.group(1)
+                                            # 将相对坐标转换为绝对坐标
+                                            x_coords = [point[0] + region_bbox[0] for point in box]
+                                            y_coords = [point[1] + region_bbox[1] for point in box]
+                                            center_x = sum(x_coords) / len(x_coords)
+                                            center_y = sum(y_coords) / len(y_coords)
+                                            option_positions[lbl] = (center_x, center_y)
+                                
+                                if answer.upper() in option_positions:
+                                    click_x, click_y = option_positions[answer.upper()]
+                                    self.log_message(f"🖱️ 正在点击答案 {answer}...", 'info')
+                                    import pyautogui
+                                    pyautogui.click(click_x, click_y)
+                                    result += f"✓ 已自动点击答案 {answer}\n"
+                                    self.log_message(f"✓ 已点击答案 {answer}", 'success')
+                                else:
+                                    self.log_message(f"⚠️ 未找到答案 {answer} 的位置", 'warning')
+                            except Exception as e:
+                                self.log_message(f"自动点击失败：{e}", 'error')
+                    else:
+                        result += "\n⚠️ 未在题库中找到答案\n"
+                        self.log_message("⚠️ 未找到答案，可手动添加", 'warning')
+                    
+                    self.result_text.insert(tk.END, result)
+                    self.result_text.config(state=tk.DISABLED)
+                    
+                    self.log_message("✓ 题目识别完成", 'success')
+                
+                self.root.after(0, update_ui)
+                
+            except Exception as e:
+                def show_error():
+                    self.log_message(f"识别失败：{e}", 'error')
+                self.root.after(0, show_error)
+        
+        # 启动识别线程
+        thread = threading.Thread(target=recognize_thread, daemon=True)
+        thread.start()
     
     def _toggle_continuous(self):
         """切换连续模式"""
