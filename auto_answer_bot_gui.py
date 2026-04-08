@@ -383,6 +383,7 @@ class AnswerBotGUI:
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="文件", menu=file_menu)
         file_menu.add_command(label="打开图片...", command=self._load_image)
+        file_menu.add_command(label="导入答题库...", command=self._import_answer_database)
         file_menu.add_command(label="保存答案数据库", command=self._save_database)
         file_menu.add_separator()
         file_menu.add_command(label="退出", command=self.root.quit)
@@ -851,6 +852,79 @@ class AnswerBotGUI:
             self.log_message(f"✗ 保存失败：{str(e)}", 'error')
             messagebox.showerror("错误", f"保存失败:\n{str(e)}")
     
+    def _import_answer_database(self):
+        """导入答题库"""
+        filetypes = [
+            ("文本文件", "*.txt"),
+            ("JSON 文件", "*.json"),
+            ("所有文件", "*.*")
+        ]
+        
+        filepath = filedialog.askopenfilename(
+            title="选择要导入的答题库文件",
+            filetypes=filetypes
+        )
+        
+        if not filepath:
+            return
+        
+        if not self.bot:
+            messagebox.showwarning("警告", "请先初始化答题机器人")
+            return
+        
+        try:
+            imported_count = 0
+            duplicated_count = 0
+            
+            if filepath.endswith('.json'):
+                import json
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        for question, answer in data.items():
+                            if question not in self.bot.answer_matcher.answer_database:
+                                self.bot.answer_matcher.answer_database[question] = str(answer)
+                                imported_count += 1
+                            else:
+                                duplicated_count += 1
+                    elif isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, dict) and 'question' in item and 'answer' in item:
+                                q = item['question']
+                                a = item['answer']
+                                if q not in self.bot.answer_matcher.answer_database:
+                                    self.bot.answer_matcher.answer_database[q] = str(a)
+                                    imported_count += 1
+                                else:
+                                    duplicated_count += 1
+            else:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and ':' in line:
+                            parts = line.split(':', 1)
+                            if len(parts) == 2:
+                                question = parts[0].strip()
+                                answer = parts[1].strip()
+                                if question not in self.bot.answer_matcher.answer_database:
+                                    self.bot.answer_matcher.answer_database[question] = answer
+                                    imported_count += 1
+                                else:
+                                    duplicated_count += 1
+            
+            self.bot.answer_matcher._save_answer_database()
+            
+            msg = f"✓ 成功导入 {imported_count} 条答案"
+            if duplicated_count > 0:
+                msg += f"\n跳过 {duplicated_count} 条重复题目"
+            
+            self.log_message(msg, 'success')
+            messagebox.showinfo("导入完成", msg)
+            
+        except Exception as e:
+            self.log_message(f"✗ 导入失败：{str(e)}", 'error')
+            messagebox.showerror("错误", f"导入失败:\n{str(e)}")
+    
     def _show_ocr_settings(self):
         """显示 OCR 设置"""
         messagebox.showinfo("OCR 设置", 
@@ -928,8 +1002,14 @@ class AnswerBotGUI:
    - 系统会自动匹配答案数据库
    - 可手动添加新答案
    - 支持模糊匹配
+   - 通过菜单【文件】→【导入答题库】批量导入答案
 
-5. 注意事项
+5. 导入答题库
+   - 支持 TXT 格式：每行"题目：答案"
+   - 支持 JSON 格式：对象或数组格式
+   - 自动跳过重复题目
+
+6. 注意事项
    - 首次使用需要下载 OCR 模型
    - 确保屏幕分辨率适中
    - 答题界面应清晰可见
@@ -937,7 +1017,7 @@ class AnswerBotGUI:
         
         help_window = tk.Toplevel(self.root)
         help_window.title("使用帮助")
-        help_window.geometry("500x400")
+        help_window.geometry("500x450")
         
         text = scrolledtext.ScrolledText(help_window, wrap=tk.WORD)
         text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
